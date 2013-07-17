@@ -79,7 +79,7 @@ size_t linked_list_index_of(void *item, linked_list_t *linked_list_p) {
     size_t i = 0;
     linked_list_item_t *curr_item = linked_list_p->first;
     while(curr_item != NULL) {
-        if(linked_list_p->compare_fn(curr_item, item) == 0) {
+        if(linked_list_p->compare_fn(curr_item->item, item) == 0) {
             ret_value = i;
             break;
         }
@@ -103,7 +103,7 @@ int linked_list_contains(void *item, linked_list_t *linked_list_p) {
     int is_contained = 0;
     linked_list_item_t *curr_item = linked_list_p->first;
     while(curr_item != NULL) {
-        if(linked_list_p->compare_fn(curr_item, item) == 0) {
+        if(linked_list_p->compare_fn(curr_item->item, item) == 0) {
             is_contained = 1;
             break;
         }
