@@ -20,8 +20,6 @@
  * TODO:
  * 		Darle coherencia
  * 		Correcto sincronismo (sync_mode)
- * 		doc
- * 		eliminar comprobaciones redundantes
  * 
  * DUDAS:
  */
@@ -149,6 +147,15 @@ enum Plot_Type {PLOT_GRADE, PLOT_BETWEENNESS, PLOT_JUMPS, PLOT_NON_REACHABLE, PL
  */
 graph_t* graph_new(enum GraphType mask, int initial_num_vertices, int SYNC_MODE);
 
+/**
+ * By the moment, 1 is the unique valid value for m.
+ * @param order Number of vertices the graph returned will have.
+ * @param m Edges added each step.
+ */
+graph_t *graph_create_free_scale (enum GraphType mask, int order, int SYNC_MODE, int m);
+
+graph_t *graph_copy_vertices (graph_t * graph_p);
+
 /***********************    Destruction    ****************************/
 
 int graph_free(void (*vertex_data_callback) (void* vertex_data), void (*edge_data_callback) (void* edge_data), graph_t*);
@@ -258,6 +265,15 @@ float graph_get_clustering_coefficient(enum EdgeType edge_type, graph_t*);
  * @return 1: It is bipartite, 0: it is NOT bipartite.
  */
 int graph_get_bipartiteness (int **color, enum EdgeType edge_type, graph_t* graph_p);
+
+/**
+ * @param inflation Granularity of the clustering. It is often called r. Good values are within [1.5, 5]
+ * @param expansion Power parameter e. Usually 2 or 3. By the moment it's 2 hardcoded.
+ * @return Graph with the same nodes, but linked in clusters.
+ */
+graph_t* graph_mcl(float inflation, int expansion, graph_t *graph_p);
+
+
 
 void graph_plot(char* filename, enum Plot_Type, graph_t*);
 

@@ -53,7 +53,7 @@ graph_t *graph_create_free_scale (enum GraphType mask, int order, int SYNC_MODE,
     graph_t* g = graph_new(mask, order, SYNC_MODE);
     enum EdgeType edge_type;
     int *appearances = (int*) malloc (sizeof(int)*order*2);
-    int *inserted = (int*) malloc (sizeof(int)*m);
+    int inserted;
     int i, j, k, end_pos = 0;
     char name[20];
     //srand(time(NULL));
@@ -83,11 +83,12 @@ graph_t *graph_create_free_scale (enum GraphType mask, int order, int SYNC_MODE,
     {
         sprintf(name, "%d", i);
         graph_add_vertex(name, NULL, g);
-        inserted[0] = rand()%end_pos;
-        graph_add_edge_iw (i, appearances[inserted[0]], NULL, edge_type, 1, g);   // initial graph, full connectivity
-        appearances[end_pos++] = appearances[inserted[0]];
+        inserted = rand()%end_pos;
+        graph_add_edge_iw (i, appearances[inserted], NULL, edge_type, 1, g);   // initial graph, full connectivity
+        appearances[end_pos++] = appearances[inserted];
         appearances[end_pos++] = i;
     }
+    free(appearances);
     return g;
 /*
     for (i = m; i < order; i++)
@@ -579,7 +580,7 @@ int __graph_add_edge(int src, int dst, void* edge_data, enum EdgeType edge_type,
     e->data = edge_data;
     e->weight = weight;
     
-    switch(edge_type)// TODO comprobacion multiple...
+    switch(edge_type)
     {
         case GRAPH_EDGE_DIRECTED:
             if(graph_p->directed == GRAPH_NON_DIRECTED && graph_p->strict == GRAPH_STRICT){
@@ -596,8 +597,9 @@ int __graph_add_edge(int src, int dst, void* edge_data, enum EdgeType edge_type,
                 return -3;
             }
             linked_list_insert(e,(graph_get_vertex_i(src,graph_p))->nd);
-            linked_list_insert(e,(graph_get_vertex_i(dst,graph_p))->nd);
-
+            if (src != dst) {
+                linked_list_insert(e,(graph_get_vertex_i(dst,graph_p))->nd);
+            }
             break;
         default:
             free(e);
@@ -610,10 +612,13 @@ int __graph_add_edge(int src, int dst, void* edge_data, enum EdgeType edge_type,
 void graph_aleale(int num_v, float connectivity, enum EdgeType edge_type, graph_t* g)
 {
     int i = 0;
-    for(int s = 0; s < num_v; s++)
-        for(int d = 0; d < num_v; d++)
+    int s;
+    int zero = 0;
+    int * ini = edge_type == GRAPH_EDGE_NON_DIRECTED? &s: &zero;
+    for(s = 0; s < num_v; s++)
+        for(int d = *ini; d < num_v; d++)
             if(rand()/(1.0*RAND_MAX) <= connectivity){
-                __graph_add_edge(s,d,NULL,edge_type,5+rand()%40+1,g);
+                __graph_add_edge(s,d,NULL,edge_type,/*5+rand()%40+*/1,g);
                 i++;
                 if(!(i % 1000000))
                     printf("Llevamos %iM edges puestos\n", i/1000000);
@@ -1258,6 +1263,320 @@ int graph_get_bipartiteness (int **color_array, enum EdgeType edge_type, graph_t
     linked_list_iterator_free(iter);
     return 1;   // all graph is colored bipartitedly
 }
+
+
+array_list_t ** __graph_mcl_get_edges(graph_t *graph_p) {
+    array_list_t **edges = (array_list_t**) malloc (graph_p->num_vertices * sizeof(array_list_t*));  // array of array_list_t*
+    vertex_t *v;
+    edge_t *e, *e_copy;
+    array_list_t *al;
+    linked_list_iterator_t * iter =  (linked_list_iterator_t *)malloc(sizeof(linked_list_iterator_t));
+    int i;
+    int loop_present;   // if the vertex has not a loop we have to add one
+
+    for (i = 0; i < graph_p->num_vertices; i++) {
+        v = graph_get_vertex_i (i, graph_p);
+        loop_present = 0;
+        if (v != NULL) {
+            al = array_list_new (linked_list_size(v->dst) + linked_list_size(v->nd), 1.5, COLLECTION_MODE_ASYNCHRONIZED);
+
+            iter = linked_list_iterator_init(v->dst, iter);
+            e = linked_list_iterator_curr (iter);
+            while (e != NULL)
+            {
+                e_copy = (edge_t*) malloc (sizeof(edge_t));
+                e_copy->src_id = e->src_id; // must be i
+                e_copy->dst_id = e->dst_id;
+                e_copy->weight = e->weight;
+                array_list_insert (e_copy, al);
+                if (e->src_id == e->dst_id)
+                    loop_present = 1;
+                e = linked_list_iterator_next(iter);
+            }
+
+            iter = linked_list_iterator_init(v->nd, iter);
+            e = linked_list_iterator_curr (iter);
+            while (e != NULL)
+            {
+                e_copy = (edge_t*) malloc (sizeof(edge_t));
+                e_copy->src_id = i;
+                e_copy->dst_id = e->dst_id == i? e->src_id: e->dst_id;
+                e_copy->weight = e->weight;
+                array_list_insert (e_copy, al);
+                if (e->src_id == e->dst_id)
+                    loop_present = 1;
+                e = linked_list_iterator_next(iter);
+            }
+
+            if (loop_present == 0)
+            {
+                e_copy = (edge_t*) malloc (sizeof(edge_t));
+                e_copy->src_id = i;
+                e_copy->dst_id = i;
+                e_copy->weight = 1;
+                array_list_insert (e_copy, al);
+            }
+
+            edges[i] = al;
+        } else {
+            edges[i] = NULL;
+        }
+    }
+    linked_list_iterator_free(iter);
+    return edges;
+}
+
+/**
+ * Computes the num_column-th column of the square of the sparse matrix.
+ * Computes the num_column-th sparse matrix square column.
+ *
+ * (a x x)   (a x x)   (a*a+x*x ...
+ * (- x x) * (- x x) = (x*b ...
+ * (b x x)   (b x x)   (b*a+x*b ...
+ * S(3,1) = A(3,1) * A(1,1) ...
+ * S(e->dst_id, num_column) = A(e->dst_id, e->src_id == i) * A(e->src_id == i, num_column)
+ * sol[e->dst_id] += e->weight * column[e->src_id]
+ */
+float * __graph_mcl_column_product(int expansion, int num_column, int length, array_list_t ** edges) {
+    float *sol = (float*) malloc(length * sizeof(float));
+    float *column = (float*) malloc(length * sizeof(float));
+    array_list_t *al;
+    edge_t *e;
+    int i, j;
+    for (i = 0; i < length; i++) {
+        column[i] = 0;
+        sol[i] = 0;
+    }
+
+    al = edges[num_column];
+    for (j = 0; j < array_list_size (al); j++) {
+        e = array_list_get (j, al);   // e = al->items[j]
+        column[e->dst_id] += e->weight;
+    }
+
+    for (i = 0; i < length; i++) {  // travel all edges
+        if (edges[i] != NULL) {
+            al = edges[i];
+            for (j = 0; j < array_list_size (al); j++) {
+                e = array_list_get (j, al);   // e = al->items[j]
+                sol[e->dst_id] += e->weight* column[e->src_id];  // note that: e->src_id == i
+            }
+        }
+    }
+    free(column);
+    return sol;
+}
+
+
+array_list_t * __graph_mcl_inflation (float inflation, int num_column, int length, float *column) {
+    array_list_t * al;
+    float sum = 0, sum2 = 0;
+    float avg;
+    int i, staying = 0;
+    float rescalation;
+    edge_t * e;
+
+    for (i = 0; i < length; i++) {  // inflation loop
+        column[i] = pow(column[i], inflation);
+        //column[i] = column[i]*column[i];
+        sum += column[i];
+    }
+
+     //without purge
+    al = array_list_new (5, 1.5, COLLECTION_MODE_ASYNCHRONIZED);
+    if (sum != 0) {
+        rescalation = 1.0 / sum;
+        for (i = 0; i < length; i++) {  // rescalation loop
+            e = (edge_t*) malloc (sizeof(edge_t));
+            e->src_id = num_column;
+            e->dst_id = i;
+            e->weight = column[i] * rescalation;
+
+            if (e->weight >= 0.01) {
+                array_list_insert (e, al);
+            } else {
+                free (e);
+            }
+        }
+    }
+     // without purge
+   /* 
+    avg = sum / length;
+    //avg = 1.0/length;
+    if (sum != 0) {
+        for (i = 0; i < length; i++) {  // rescalation loop
+            if (column[i] >= avg) {
+                column[i] /= sum;
+                staying++;
+                sum2 += column[i];
+            } else {
+                column[i] = -1;
+            }
+        }
+    }
+    
+    rescalation = 1.0 / sum2;
+
+    al = array_list_new (staying, 1.5, COLLECTION_MODE_ASYNCHRONIZED);
+    
+    for (i = 0; i < length; i++) { // purge loop
+        if (column[i] > 0.01) {
+            e = (edge_t*) malloc (sizeof(edge_t));
+            e->src_id = num_column;
+            e->dst_id = i;
+            e->weight = column[i] * rescalation;
+            array_list_insert (e, al);
+        }
+
+    }
+    */
+    return al;
+}
+
+int __graph_mcl_diff (array_list_t **edges, array_list_t **new_edges) {
+    static int i = 0;
+    if (++i == 5)
+        return 0;
+    return 1;
+}
+
+/*
+ * TODO
+ *      mcl diff
+ *      array list bug
+ *      paralelizacion (omp? sse?)
+ */
+graph_t* graph_mcl(float inflation, int expansion, graph_t *graph_p) {
+    array_list_t **edges, **edges_tmp, **aux_ptr;   // array of "vertices" that are an array_list of edges
+    float *column;
+    int i=0, j, length, different;
+    edge_t *e;
+    graph_t *g2;
+    
+
+    length = graph_p->num_vertices;
+    edges = __graph_mcl_get_edges (graph_p);    //initial load from the graph
+    aux_ptr = (array_list_t**) malloc (length * sizeof(array_list_t*)); // aux_ptr reuses the last array
+    do {
+        edges_tmp = aux_ptr;
+        
+    //omp_set_num_threads(4);
+    //printf ("%s:%d omp_get_num_threads() = %d\n", __FILE__, __LINE__, omp_get_num_threads());    // DEPURACION
+//#pragma omp parallel for private(column, i) shared(edges_tmp) 
+        for (i = 0; i < length; i++) {  // expansion, inflation and purge; segmentated in columns, instead of full matrix
+
+            //printf ("%s:%d omp_get_thread_num = %d\n", __FILE__, __LINE__, omp_get_thread_num());  // DEPURACION
+            column = __graph_mcl_column_product(expansion, i, length, edges);
+            edges_tmp[i] = __graph_mcl_inflation (inflation, i, length, column); 
+            free(column);
+        }
+
+        // edges_tmp is completed
+        different = __graph_mcl_diff(edges, edges_tmp);
+       
+       /*
+        g2 = graph_copy_vertices (graph_p);
+    for (i = 0; i < length; i++) {
+        for (j = 0; j < array_list_size(edges[i]); j++) {
+            if (edges[i] != NULL) {
+                e = array_list_get (j, edges[i]);
+                __graph_add_edge (e->src_id, e->dst_id, NULL, GRAPH_EDGE_DIRECTED, e->weight, g2);
+            }
+        }
+    }
+    char nombre[20];
+    static int asdf = 1;
+    sprintf(nombre, "mcl-4iter%d.gv",asdf++);
+    graph_print_dot_w (nombre, g2);
+    // */
+
+        
+        for (i = 0; i < length; i++) {
+            if (edges[i] != NULL) {
+                array_list_free (edges[i], free);
+            }
+        }
+        aux_ptr = edges;
+        edges = edges_tmp;
+    } while (different);
+
+    g2 = graph_copy_vertices (graph_p);
+    for (i = 0; i < length; i++) {
+        for (j = 0; j < array_list_size(edges[i]); j++) {
+            if (edges[i] != NULL) {
+                e = array_list_get (j, edges[i]);
+                __graph_add_edge (e->src_id, e->dst_id, NULL, GRAPH_EDGE_DIRECTED, e->weight, g2);
+            }
+        }
+    }
+
+    for (i = 0; i < length; i++) {
+        if (edges[i] != NULL) {
+            array_list_free (edges[i], free);
+        }
+    }
+    free(edges);
+    free(aux_ptr);
+    return g2;
+}
+
+
+    //rellenar el array +
+    //poner autobucles +
+    //multiplicar matrices ^expansion +
+    //inflar ^inflation+
+    //rescalar +
+    //purgar +
+    //goto 1 +
+
+graph_t *graph_copy_vertices (graph_t * graph_p) {
+    graph_t *g2 = (graph_t*)calloc(1,sizeof(graph_t));
+    int i, ret;
+    khiter_t k;
+    vertex_t *v_copy, *v;
+
+    g2->directed = graph_p->directed;
+    g2->cyclic = graph_p->cyclic;
+    //g->multiple = (mask & GRAPH_MULTIPLE)? 1: 0;
+    g2->multiple = graph_p->multiple;
+    g2->strict = graph_p->strict;
+    g2->non_negative = graph_p->non_negative;
+    
+    g2->num_edges = 0;
+    g2->num_vertices = graph_p->num_vertices;
+    
+    g2->sync_mode = graph_p->sync_mode;
+    g2->vertices = array_list_new(g2->num_vertices, 1.5, g2->sync_mode);
+    g2->removed_vertices = linked_list_new (g2->sync_mode);
+    g2->dict = kh_init(gr);
+    
+    g2->stats.valid = 0;
+    g2->chunk = graph_p->chunk;
+
+    for (i = 0; i < g2->num_vertices; i++) {
+        v_copy = array_list_get (i, graph_p->vertices);
+        if (v_copy->src == NULL) {   // removed vertex
+            v->src = v->dst = v->nd = NULL;
+            v->name = NULL;
+            v->data = NULL;
+            linked_list_insert(v, graph_p->removed_vertices);
+        } else {
+            v = (vertex_t*)malloc(sizeof(vertex_t));
+            v->src = linked_list_new(graph_p->sync_mode);
+            v->dst = linked_list_new(graph_p->sync_mode);
+            v->nd = linked_list_new(graph_p->sync_mode);
+            v->name = strdup(v_copy->name);
+            v->data = NULL; // get duplicate pointer?
+            k = kh_put(gr, g2->dict, v->name, &ret);
+            kh_value(g2->dict,k) = v->id;
+        }
+        v->id = i;
+        array_list_insert(v, g2->vertices);
+    }
+    return g2;
+
+}
+
 
 
 void graph_plot(char* filename, enum Plot_Type plot_type, graph_t* graph_p)

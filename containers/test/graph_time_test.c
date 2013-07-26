@@ -41,24 +41,43 @@ int main (void)
     
 	graph_t *g;
     graph_path_t * path_l ;
-    long int num_vertices = 2000;
-    int num_edges = 2000000;
+    long int num_vertices = 5000;
+    int num_edges = 1000;
     int name_length = 255;
     char ** names;
     int i, nt;
     float p, speed;
+    
+
+    printf ("creando el grafo\n");
+    g = graph_create_free_scale(GRAPH_NON_NEGATIVE_WEIGHT | GRAPH_CYCLIC | GRAPH_DIRECTED, num_vertices, COLLECTION_MODE_ASYNCHRONIZED, 1);
+    printf ("llamando a mcl\n");
+    
+    
+    graph_t * g2;
+	RUN_TIME_TEST(
+    g2 = graph_mcl (4, 2, g);
+    ,ini_time, "Tiempo mcl\n");
+    //graph_print_dot_w ("mcl-4fin.gv", g2);
+    //graph_print_dot_w ("mcl-4ini.gv", g);
+    graph_free(NULL, NULL, g);
+    graph_free(NULL, NULL, g2);
+
+    return 0;
+
 
     p = (1.0*num_edges)/(num_vertices*num_vertices);
-    p = 0.002;
-    
+    //p = 0.002;
+   /* 
     RUN_TIME_TEST({
         g = graph_read_dot("grafo_dot.gv");
         graph_print_dot_w("leido.gv", g);
     },ini_time, "Tiempo parsear dot\n");
-
-	srand(time(NULL));
+*/
+	//srand(time(NULL));
 	
 	names = (char**) malloc (sizeof(char*)*num_vertices);
+
 	
 	for (i = 0; i < num_vertices; i++)
 	{
@@ -83,12 +102,27 @@ int main (void)
     RUN_TIME_TEST(
         graph_aleale(num_vertices, p, GRAPH_EDGE_NON_DIRECTED, g);
     ,ini_time, "Tiempo en rellenar edges aleatorios con p:%f. solo cumplian las condiciones %d edges\n", p, g->num_edges);
-	
+    
+
+
+    
+    //graph_t * g2 = graph_mcl (2, 2, g);
+    //graph_print_dot_w ("mcl-fin.gv", g2);
+    //graph_print_dot_w ("mcl-ini.gv", g);
+    //graph_free(NULL, NULL, g);
+    //graph_free(NULL, NULL, g2);
+	    //for (i = 0; i < num_vertices; i++)
+		//free(names[i]);
+		//
+	//free (names);
+    //return 0;   //FIXME
+    
+    
+    
+    
     //for (i = 0; i < num_edges; i++)
         //graph_add_edge_iw(rand()%num_vertices, rand()%num_vertices, NULL, GRAPH_EDGE_DIRECTED, 1, g);
-        
-    
-    omp_set_num_threads(1);
+        omp_set_num_threads(1);
     RUN_TIME_TEST(dijkstras(1000, g),base_time,"tiempo en 1000 Dijkstras         \n");
     
 	for(nt=32; nt>1; nt/=2)

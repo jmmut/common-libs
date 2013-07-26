@@ -288,6 +288,12 @@ START_TEST(test_neighbor_k_level) {
 }
 END_TEST
 
+START_TEST(test_mcl)
+{
+    graph_t * g2 = graph_mcl(2,2,g);
+    graph_print_dot("check_graph_bp.gv", g2);
+}
+END_TEST
 
 /* ******************************
  *      Main entry point        *
@@ -319,6 +325,7 @@ Suite *create_test_suite(void) {
     tcase_add_test(tc_profiling, test_dijkstra);
     tcase_add_test(tc_profiling, test_disjoint);
     tcase_add_test(tc_profiling, test_bipartiteness);
+    tcase_add_test(tc_profiling, test_mcl);
     //tcase_add_test(tc_iterators, test_iterators);
 
     // Add test cases to a test suite
